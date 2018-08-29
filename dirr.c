@@ -61,11 +61,27 @@ struct yfile*
 yfopen(TCHAR *filename) {
 	struct yfile *yfp = malloc(sizeof(struct yfile));
 	
-	yfp->fp = _tfopen(filename, _T("wb"));
-	if (yfp->fp == NULL){
-		free(yfp);
-		return NULL;
+	if (filename == NULL){
+		yfp->fp = stdout;
+		if (SetConsoleOutputCP(CP_UTF8) == 0) {
+			_ftprintf(stderr, _T("SetConsoleOutputCP: win32err=%u: "), (UINT)GetLastError());
+		}
+	} else {
+		yfp->fp = _tfopen(filename, _T("wb"));
+		if (yfp->fp == NULL){
+			free(yfp);
+			return NULL;
+		}
 	}
+	
+	// SetConsoleOutputCP(CP_UTF8)すると、fwriteで以下エラーが発生することがある。
+	// おそらく、UTF8の3バイト文字の途中で、stdioのバッファからwin32へ書き込まれたのが原因。
+	// →stdioのバッファサイズを大きくしたら、発生しなくなった。
+	// ERROR_OUTOFMEMORY
+	// Not enough storage is available to complete this operation.
+	int stdioBufSize = 65536;
+	char *stdioBuf = malloc(stdioBufSize);
+	setvbuf(yfp->fp, stdioBuf, _IOFBF, stdioBufSize);
 
 	yfp->codepage = CP_UTF8;
 	yfp->p = yfp->bufW;
@@ -451,7 +467,7 @@ _tmain(int argc, TCHAR *argv[])
 	TCHAR path[MAX_PATH];
 	TCHAR paTH[MAX_PATH];
 	
-	TCHAR *output_filename = _T("dir.log");
+	TCHAR *output_filename = NULL; //_T("dir.log");
 #ifdef UNICODE
 #ifdef BOM
 	// ユニコード識別文字
